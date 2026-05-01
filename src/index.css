@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+:root {
+  --sidebar-width: 20%;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #ffffff;
+  color: #1a1a1a;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hide scrollbar but keep scrollable */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Tiptap editor styles */
+.tiptap {
+  outline: none;
+  min-height: 100%;
+}
+
+.tiptap p {
+  margin-bottom: 0.75rem;
+  line-height: 1.8;
+}
+
+.tiptap h1 { font-size: 2rem; font-weight: 700; margin: 2rem 0 1rem; }
+.tiptap h2 { font-size: 1.5rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
+.tiptap h3 { font-size: 1.25rem; font-weight: 600; margin: 1.25rem 0 0.5rem; }
+
+.tiptap pre {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.tiptap code {
+  background: #f0f0f0;
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-size: 0.9em;
+}
+
+.tiptap pre code {
+  background: none;
+  padding: 0;
+}
+
+.tiptap blockquote {
+  border-left: 3px solid #e5e7eb;
+  padding-left: 1rem;
+  color: #6b7280;
+  margin: 1rem 0;
+}
+
+.tiptap ul, .tiptap ol {
+  padding-left: 1.5rem;
+  margin: 0.75rem 0;
+}
+
+.tiptap li { margin-bottom: 0.25rem; }
+
+/* Section divider */
+.section-divider {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #e5e7eb, transparent);
+  margin: 2rem 0;
+}
+
+/* Canvas container */
+.canvas-container {
+  position: relative;
+  border: 2px dashed #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  min-height: 200px;
+  margin: 1rem 0;
+  transition: border-color 0.2s;
+}
+
+.canvas-container:hover,
+.canvas-container:focus-within {
+  border-color: #3b82f6;
+}
+
+.canvas-container canvas {
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+/* Writing area - paper-like */
+.writing-area {
+  position: relative;
+  min-height: 80px;
+  padding: 0.5rem 0;
+  cursor: text;
+}
+
+.writing-area::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #e5e7eb;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.writing-area:hover::after,
+.writing-area:focus-within::after {
+  opacity: 1;
+}
+
+/* Question area */
+.question-card {
+  background: #ffffff;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* Chat message */
+.chat-bubble {
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Subtle dot pattern background */
+.dot-pattern {
+  background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* API config modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
