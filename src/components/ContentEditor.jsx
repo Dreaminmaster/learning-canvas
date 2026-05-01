@@ -185,9 +185,9 @@ export default function ContentEditor() {
         )}
       </div>
 
-      {/* AI Chat panel (right 1/3) */}
-      <div className="w-px bg-gray-50 flex-shrink-0" />
-      <div className="w-80 flex-shrink-0 h-full p-6 border-l border-gray-50 flex flex-col overflow-hidden">
+      {/* AI Chat panel (right side) */}
+      <div className="w-px bg-gray-100 flex-shrink-0" />
+      <div className="w-[360px] flex-shrink-0 h-full px-6 py-6 border-l border-gray-50 flex flex-col overflow-hidden">
         <AIChatPanel sectionId={section.id} />
       </div>
     </div>

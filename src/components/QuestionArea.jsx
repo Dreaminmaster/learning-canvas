@@ -17,6 +17,8 @@ export default function QuestionArea({ section }) {
   const handleSubmit = async (questionId, answer, mode) => {
     if (!answer.trim() && mode === 'text') return
 
+    const uniqueKey = `${section.id}__${questionId}`
+
     setSubmitting(true)
     try {
       let feedback
@@ -33,7 +35,7 @@ export default function QuestionArea({ section }) {
           section.content
         )
       }
-      actions.setStudentAnswer(questionId, answer, feedback)
+      actions.setStudentAnswer(uniqueKey, answer, feedback)
       actions.addChatMessage(section.id, {
         role: 'student',
         content: mode === 'canvas' ? '[绘制了图示]' : answer,
@@ -74,7 +76,9 @@ export default function QuestionArea({ section }) {
       </div>
 
       {section.questions.map((question, idx) => {
-        const answerData = state.studentAnswers[question.id]
+        // Use section-prefixed key to ensure uniqueness across sections
+        const uniqueKey = `${section.id}__${question.id}`
+        const answerData = state.studentAnswers[uniqueKey]
         const isActive = activeQuestionId === question.id
 
         return (
