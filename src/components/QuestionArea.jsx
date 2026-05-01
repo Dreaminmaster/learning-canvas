@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react'
 import { useStudy } from '../stores/StudyContext'
 import { MessageSquare, PencilLine, CheckCircle2, AlertCircle } from 'lucide-react'
 import CanvasDraw from './CanvasDraw'
-import { evaluateAnswer } from '../services/ai'
+import { evaluateAnswer, evaluateCanvas } from '../services/ai'
 
 export default function QuestionArea({ section }) {
   const { state, actions } = useStudy()
@@ -19,11 +19,20 @@ export default function QuestionArea({ section }) {
 
     setSubmitting(true)
     try {
-      const feedback = await evaluateAnswer(
-        section.questions.find(q => q.id === questionId).text,
-        mode === 'canvas' ? '[学生绘制了一幅图]' : answer,
-        section.content
-      )
+      let feedback
+      if (mode === 'canvas') {
+        feedback = await evaluateCanvas(
+          section.questions.find(q => q.id === questionId).text,
+          answer,
+          section.content
+        )
+      } else {
+        feedback = await evaluateAnswer(
+          section.questions.find(q => q.id === questionId).text,
+          answer,
+          section.content
+        )
+      }
       actions.setStudentAnswer(questionId, answer, feedback)
       actions.addChatMessage(section.id, {
         role: 'student',

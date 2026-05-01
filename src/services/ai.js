@@ -48,7 +48,7 @@ export function getAIConfig() {
     provider: 'mimo',
     endpoint: 'https://api.xiaomimimo.com/v1/chat/completions',
     model: 'mimo-v2.5-pro',
-    apiKey: '',
+    apiKey: 'sk-ctf0zghx7e5hwufkbjfoj4j7qzsai2x49bnk4xrmxdav8g21',
     systemPrompt: getSystemPrompt(),
   }
 }
@@ -82,41 +82,21 @@ function getSystemPrompt() {
 - 不要使用 markdown 格式`
 }
 
-// Default outline generation prompt
+// Outline generation prompt - optimized for MiMo
 function getOutlinePrompt(materialText) {
-  return `请根据以下学习资料，生成一份结构化的学习大纲。
+  return `请根据以下学习资料生成JSON格式的学习大纲。
+
+只返回JSON，不要其他文字。JSON结构：
+{"title":"主题","sections":[{"id":"s1","title":"标题","content":"200-500字的详细内容，支持markdown格式","questions":[{"id":"q1","text":"检验理解的问题","type":"text","hint":"可选提示"}]}]}
 
 要求：
-1. 大纲以 JSON 格式返回
-2. 每个章节包含：id、title、content（详细的文本内容，200-500字）
-3. 每个章节末尾包含 1-3 个"检验问题"（questions），用于测试学生理解程度
-4. 内容由浅入深，循序渐进
-5. 代码示例需要用 markdown code block 格式
-
-JSON 结构：
-{
-  "title": "学习主题",
-  "sections": [
-    {
-      "id": "s1",
-      "title": "章节标题",
-      "content": "详细的文本内容...",
-      "questions": [
-        {
-          "id": "q1",
-          "text": "问题描述",
-          "type": "text", // text 或 canvas
-          "hint": "提示信息（可选）"
-        }
-      ]
-    }
-  ]
-}
+- sections 3-6节，由浅入深
+- 每节content包含概念解释和代码示例（用\`\`\`包裹）
+- 每节1-3个questions，类型可以是text或canvas
+- 用中文
 
 学习资料：
-${materialText}
-
-请直接返回 JSON，不要包含其他文字。`
+${materialText}`
 }
 
 // Chat completion call
@@ -172,6 +152,9 @@ export async function chatCompletion(messages, config = null) {
     return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
   }
 
+  // MiMo uses max_completion_tokens, OpenAI uses max_tokens
+  const isMiMo = cfg.provider === 'mimo'
+
   // OpenAI-compatible format (MiMo, OpenAI, Custom)
   response = await fetch(endpoint, {
     method: 'POST',
@@ -183,7 +166,11 @@ export async function chatCompletion(messages, config = null) {
       model,
       messages,
       temperature: 0.7,
-      max_tokens: 2048,
+      ...(isMiMo
+        ? { max_completion_tokens: 4096 }
+        : { max_tokens: 4096 }
+      ),
+      stream: false,
     }),
   })
 
@@ -259,4 +246,56 @@ ${sectionContent}
   ]
 
   return chatCompletion(messages, cfg)
+}
+
+// Evaluate student's canvas drawing using MiMo vision API
+export async function evaluateCanvas(questionText, imageDataUrl, sectionContent) {
+  const cfg = getAIConfig()
+
+  // MiMo image recognition requires mimo-v2.5 (not -pro)
+  const imageModel = cfg.provider === 'mimo' ? 'mimo-v2.5' : cfg.model
+  const endpoint = cfg.endpoint || 'https://api.xiaomimimo.com/v1/chat/completions'
+
+  const messages = [
+    {
+      role: 'system',
+      content: '你是一位苏格拉底式学习助教。学生画了一张图来回答问题。请分析图片内容，判断学生的理解是否正确，然后用引导性的方式回应。不超过200字，用中文，不要markdown。'
+    },
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `学习章节内容：\n${sectionContent}\n\n问题是："${questionText}"\n\n请分析学生画的这张图：`
+        },
+        {
+          type: 'image_url',
+          image_url: { url: imageDataUrl }
+        }
+      ]
+    }
+  ]
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': cfg.apiKey,
+    },
+    body: JSON.stringify({
+      model: imageModel,
+      messages,
+      max_completion_tokens: 1024,
+      temperature: 0.7,
+      stream: false,
+    }),
+  })
+
+  if (!response.ok) {
+    const err = await response.text()
+    throw new Error(`API Error (${response.status}): ${err}`)
+  }
+
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content || ''
 }
