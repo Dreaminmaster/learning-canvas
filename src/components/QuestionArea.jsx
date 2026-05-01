@@ -1,23 +1,52 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useStudy } from '../stores/StudyContext'
-import { MessageSquare, PencilLine, CheckCircle2, AlertCircle } from 'lucide-react'
+import { MessageSquare, PencilLine, CheckCircle2, AlertCircle, RotateCcw, ChevronDown, ChevronUp, Bot, User } from 'lucide-react'
 import CanvasDraw from './CanvasDraw'
 import { evaluateAnswer, evaluateCanvas } from '../services/ai'
 
+// Determine answer status from AI feedback text
+function getAnswerStatus(feedback) {
+  if (!feedback) return 'unknown'
+  const correct = /正确|没错|很好|理解到位|回答得好|准确|说得对|确实如此/.test(feedback)
+  const wrong = /再想想|换个角度|不完全对|不正确|有误|注意一下|重新思考/.test(feedback)
+  if (correct && !wrong) return 'correct'
+  if (wrong) return 'partial'
+  return 'partial' // default: partially correct / guiding
+}
+
+const STATUS_CONFIG = {
+  correct: { icon: CheckCircle2, color: 'green', label: '回答正确' },
+  partial: { icon: AlertCircle, color: 'amber', label: '需要改进' },
+  wrong: { icon: AlertCircle, color: 'red', label: '再想想' },
+  unknown: { icon: AlertCircle, color: 'gray', label: '已回答' },
+}
+
 export default function QuestionArea({ section }) {
   const { state, actions } = useStudy()
-  const [activeQuestionId, setActiveQuestionId] = useState(null)
-  const [inputMode, setInputMode] = useState('text') // text | canvas
+  const [activeInputId, setActiveInputId] = useState(null)   // which question's input is open
+  const [inputMode, setInputMode] = useState('text')
   const [textInput, setTextInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [expandedChat, setExpandedChat] = useState({})        // { [qId]: bool }
   const textareaRef = useRef(null)
 
+  useEffect(() => {
+    if (activeInputId && inputMode === 'text' && textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [activeInputId, inputMode])
+
   if (!section?.questions || section.questions.length === 0) return null
+
+  const toggleChat = (qId) => {
+    setExpandedChat(prev => ({ ...prev, [qId]: !prev[qId] }))
+  }
 
   const handleSubmit = async (questionId, answer, mode) => {
     if (!answer.trim() && mode === 'text') return
 
     const uniqueKey = `${section.id}__${questionId}`
+    const qChatKey = `${section.id}__${questionId}__chat`
 
     setSubmitting(true)
     try {
@@ -35,55 +64,79 @@ export default function QuestionArea({ section }) {
           section.content
         )
       }
-      actions.setStudentAnswer(uniqueKey, answer, feedback)
-      actions.addChatMessage(section.id, {
+
+      const status = getAnswerStatus(feedback)
+
+      // Save answer with status
+      actions.setStudentAnswer(uniqueKey, answer, feedback, status)
+
+      // Add to per-question chat (NOT the global section chat)
+      actions.addChatMessage(qChatKey, {
         role: 'student',
         content: mode === 'canvas' ? '[绘制了图示]' : answer,
       })
-      actions.addChatMessage(section.id, {
+      actions.addChatMessage(qChatKey, {
         role: 'assistant',
         content: feedback,
       })
+
+      // Auto-expand the chat for this question
+      setExpandedChat(prev => ({ ...prev, [questionId]: true }))
     } catch (err) {
-      actions.addChatMessage(section.id, {
+      actions.addChatMessage(qChatKey, {
         role: 'error',
         content: `提交失败: ${err.message}`,
       })
     }
     setSubmitting(false)
-    setActiveQuestionId(null)
     setTextInput('')
+    // Don't close input if answer was wrong - allow retry
+    const qData = state.studentAnswers[uniqueKey]
+    const lastStatus = qData?.status
+    if (lastStatus === 'correct') {
+      setActiveInputId(null)
+    }
+  }
+
+  const handleRetry = (questionId) => {
+    const uniqueKey = `${section.id}__${questionId}`
+    // Don't clear the answer - keep history, just open input again
+    setActiveInputId(questionId)
+    setInputMode('text')
   }
 
   const handleTextSubmit = (questionId) => {
     if (!textInput.trim()) return
-    handleSubmit(questionId, inputMode === 'text' ? textInput : '[canvas]', inputMode)
+    handleSubmit(questionId, textInput, 'text')
   }
 
-  const handleCanvasSubmit = (dataUrl, type) => {
-    if (!activeQuestionId) return
-    handleSubmit(activeQuestionId, dataUrl, 'canvas')
+  const handleCanvasSubmit = (dataUrl) => {
+    if (!activeInputId) return
+    handleSubmit(activeInputId, dataUrl, 'canvas')
   }
 
   return (
     <div className="mt-8 space-y-6">
       <div className="flex items-center gap-2 mb-4">
         <div className="h-px flex-1 bg-gray-100" />
-        <span className="text-xs text-gray-400 font-medium tracking-wider uppercase">
-          检验理解
-        </span>
+        <span className="text-xs text-gray-400 font-medium tracking-wider uppercase">检验理解</span>
         <div className="h-px flex-1 bg-gray-100" />
       </div>
 
       {section.questions.map((question, idx) => {
-        // Use section-prefixed key to ensure uniqueness across sections
         const uniqueKey = `${section.id}__${question.id}`
+        const qChatKey = `${section.id}__${question.id}__chat`
         const answerData = state.studentAnswers[uniqueKey]
-        const isActive = activeQuestionId === question.id
+        const qMessages = state.chatMessages[qChatKey] || []
+        const isActive = activeInputId === question.id
+        const isChatOpen = expandedChat[question.id]
+        const status = answerData?.status || 'unknown'
+        const sConfig = STATUS_CONFIG[status]
+        const StatusIcon = sConfig.icon
 
         return (
           <div key={question.id} className="question-card">
-            {/* Question */}
+            {/* Question header */}
             <div className="flex items-start gap-3 mb-4">
               <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5">
                 {idx + 1}
@@ -93,132 +146,190 @@ export default function QuestionArea({ section }) {
                   {question.text}
                 </p>
                 {question.hint && (
-                  <p className="text-xs text-gray-400 mt-1 italic">
-                    💡 {question.hint}
-                  </p>
+                  <p className="text-xs text-gray-400 mt-1 italic">💡 {question.hint}</p>
                 )}
               </div>
               {answerData && (
-                <CheckCircle2 size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
+                <StatusIcon
+                  size={18}
+                  className={`flex-shrink-0 mt-0.5 ${
+                    status === 'correct' ? 'text-green-500' :
+                    status === 'partial' ? 'text-amber-500' :
+                    status === 'wrong' ? 'text-red-500' : 'text-gray-400'
+                  }`}
+                />
               )}
             </div>
 
-            {/* Answer status */}
-            {answerData && (
-              <div className="ml-9 mb-4 p-3 bg-green-50 rounded-lg">
-                <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle2 size={14} className="text-green-500" />
-                  <span className="text-xs text-green-700 font-medium">
-                    已回答 ({answerData.attempts} 次尝试)
-                  </span>
+            {/* Answer status bar */}
+            {answerData && !isActive && (
+              <div className={`ml-9 mb-4 p-3 rounded-lg ${
+                status === 'correct' ? 'bg-green-50' :
+                status === 'partial' ? 'bg-amber-50' :
+                status === 'wrong' ? 'bg-red-50' : 'bg-gray-50'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <StatusIcon size={14} className={
+                      status === 'correct' ? 'text-green-500' :
+                      status === 'partial' ? 'text-amber-500' :
+                      status === 'wrong' ? 'text-red-500' : 'text-gray-400'
+                    } />
+                    <span className={`text-xs font-medium ${
+                      status === 'correct' ? 'text-green-700' :
+                      status === 'partial' ? 'text-amber-700' :
+                      status === 'wrong' ? 'text-red-700' : 'text-gray-500'
+                    }`}>
+                      {sConfig.label}（第 {answerData.attempts} 次尝试）
+                    </span>
+                  </div>
+                  {status !== 'correct' && (
+                    <button
+                      onClick={() => handleRetry(question.id)}
+                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      <RotateCcw size={12} />
+                      再试一次
+                    </button>
+                  )}
                 </div>
-                <p className="text-sm text-green-800">{answerData.answer.substring(0, 100)}</p>
-                {answerData.answer.startsWith('data:image') && (
-                  <img src={answerData.answer} alt="你的作答" className="mt-2 max-h-20 rounded" />
-                )}
               </div>
             )}
 
             {/* Input area */}
-            {!answerData && (
+            {!answerData || isActive ? (
               <div className="ml-9">
                 {!isActive ? (
                   <div className="flex gap-2">
                     <button
-                      onClick={() => {
-                        setActiveQuestionId(question.id)
-                        setInputMode('text')
-                      }}
+                      onClick={() => { setActiveInputId(question.id); setInputMode('text') }}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors border border-gray-200"
                     >
-                      <MessageSquare size={13} />
-                      输入文字
+                      <MessageSquare size={13} /> 输入文字
                     </button>
                     <button
-                      onClick={() => {
-                        setActiveQuestionId(question.id)
-                        setInputMode('canvas')
-                      }}
+                      onClick={() => { setActiveInputId(question.id); setInputMode('canvas') }}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors border border-gray-200"
                     >
-                      <PencilLine size={13} />
-                      绘图作答
+                      <PencilLine size={13} /> 绘图作答
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {/* Mode toggle */}
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => setInputMode('text')}
+                      <button onClick={() => setInputMode('text')}
                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
                           inputMode === 'text' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'
-                        }`}
-                      >
-                        <MessageSquare size={12} />
-                        文字
+                        }`}>
+                        <MessageSquare size={12} /> 文字
                       </button>
-                      <button
-                        onClick={() => setInputMode('canvas')}
+                      <button onClick={() => setInputMode('canvas')}
                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
                           inputMode === 'canvas' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'
-                        }`}
-                      >
-                        <PencilLine size={12} />
-                        画图
+                        }`}>
+                        <PencilLine size={12} /> 画图
                       </button>
                     </div>
 
-                    {/* Text input - paper-like */}
                     {inputMode === 'text' && (
                       <div className="writing-area">
                         <textarea
                           ref={textareaRef}
                           value={textInput}
                           onChange={(e) => setTextInput(e.target.value)}
-                          placeholder="在此写下你的想法..."
+                          placeholder={answerData ? '重新思考，再试一次...' : '在此写下你的想法...'}
                           rows={3}
                           className="w-full resize-none outline-none text-sm text-gray-800 placeholder-gray-300 bg-transparent leading-relaxed"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                              e.preventDefault()
                               handleTextSubmit(question.id)
                             }
                           }}
-                          autoFocus
                         />
                         <div className="flex justify-between items-center mt-2">
                           <span className="text-xs text-gray-300">
                             {textInput.length > 0 ? `${textInput.length} 字` : '按 Cmd+Enter 提交'}
                           </span>
-                          <button
-                            onClick={() => handleTextSubmit(question.id)}
-                            disabled={!textInput.trim() || submitting}
-                            className={`px-3 py-1 rounded text-xs font-medium transition-all ${
-                              textInput.trim() && !submitting
-                                ? 'bg-gray-800 text-white hover:bg-gray-700'
-                                : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                            }`}
-                          >
-                            {submitting ? '思考中...' : '提交'}
-                          </button>
+                          <div className="flex gap-2">
+                            {answerData && (
+                              <button onClick={() => setActiveInputId(null)}
+                                className="text-xs text-gray-400 hover:text-gray-600">取消</button>
+                            )}
+                            <button
+                              onClick={() => handleTextSubmit(question.id)}
+                              disabled={!textInput.trim() || submitting}
+                              className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                                textInput.trim() && !submitting
+                                  ? 'bg-gray-800 text-white hover:bg-gray-700'
+                                  : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                              }`}>
+                              {submitting ? '思考中...' : '提交'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Canvas input */}
                     {inputMode === 'canvas' && (
-                      <CanvasDraw
-                        onSubmit={handleCanvasSubmit}
-                        placeholder="在此绘图作答..."
-                      />
+                      <CanvasDraw onSubmit={handleCanvasSubmit} placeholder="在此绘图作答..." />
                     )}
 
-                    <button
-                      onClick={() => setActiveQuestionId(null)}
-                      className="text-xs text-gray-400 hover:text-gray-600"
-                    >
-                      收起
-                    </button>
+                    {!answerData && (
+                      <button onClick={() => setActiveInputId(null)}
+                        className="text-xs text-gray-400 hover:text-gray-600">收起</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {/* Per-question chat area */}
+            {qMessages.length > 0 && (
+              <div className="ml-9 mt-4">
+                <button
+                  onClick={() => toggleChat(question.id)}
+                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-2"
+                >
+                  {isChatOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  对话记录 ({qMessages.length})
+                </button>
+
+                {isChatOpen && (
+                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                    <div className="max-h-48 overflow-y-auto p-3 space-y-3 hide-scrollbar bg-gray-50/50">
+                      {qMessages.map((msg, idx) => (
+                        <div key={idx}>
+                          {msg.role === 'student' && (
+                            <div className="flex gap-2 items-start justify-end">
+                              <div className="bg-gray-800 text-white text-xs leading-relaxed rounded-xl rounded-tr-sm px-3 py-2 max-w-[85%] break-words">
+                                {msg.content.startsWith('data:image') ? (
+                                  <img src={msg.content} alt="你的作答" className="max-h-20 rounded" />
+                                ) : msg.content}
+                              </div>
+                              <User size={12} className="text-gray-400 flex-shrink-0 mt-0.5" />
+                            </div>
+                          )}
+                          {msg.role === 'assistant' && (
+                            <div className="flex gap-2 items-start">
+                              <Bot size={12} className="text-gray-400 flex-shrink-0 mt-0.5" />
+                              <div className="bg-white text-gray-700 text-xs leading-relaxed rounded-xl rounded-tl-sm px-3 py-2 max-w-[90%] break-words border border-gray-100">
+                                {msg.content}
+                              </div>
+                            </div>
+                          )}
+                          {msg.role === 'error' && (
+                            <div className="flex gap-2 items-start">
+                              <AlertCircle size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
+                              <div className="bg-red-50 text-red-700 text-xs leading-relaxed rounded-xl px-3 py-2">
+                                {msg.content}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

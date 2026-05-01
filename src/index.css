@@ -158,6 +158,9 @@ body {
   font-size: 0.875rem;
   line-height: 1.6;
   animation: fadeInUp 0.3s ease-out;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
 }
 
 @keyframes fadeInUp {

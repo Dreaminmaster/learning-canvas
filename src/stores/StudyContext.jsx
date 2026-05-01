@@ -34,7 +34,7 @@ function studyReducer(state, action) {
     }
 
     case 'SET_STUDENT_ANSWER': {
-      const { questionId, answer, feedback } = action.payload
+      const { questionId, answer, feedback, status } = action.payload
       const prev = state.studentAnswers[questionId] || { attempts: 0 }
       return {
         ...state,
@@ -43,6 +43,7 @@ function studyReducer(state, action) {
           [questionId]: {
             answer,
             feedback,
+            status: status || 'unknown',
             attempts: prev.attempts + 1,
           },
         },
@@ -71,8 +72,8 @@ export function StudyProvider({ children }) {
     setCurrentSection: useCallback((index) => dispatch({ type: 'SET_CURRENT_SECTION', payload: index }), []),
     addChatMessage: useCallback((sectionId, message) =>
       dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { sectionId, message } }), []),
-    setStudentAnswer: useCallback((questionId, answer, feedback) =>
-      dispatch({ type: 'SET_STUDENT_ANSWER', payload: { questionId, answer, feedback } }), []),
+    setStudentAnswer: useCallback((questionId, answer, feedback, status) =>
+      dispatch({ type: 'SET_STUDENT_ANSWER', payload: { questionId, answer, feedback, status } }), []),
     setLoading: useCallback((loading) => dispatch({ type: 'SET_LOADING', payload: loading }), []),
     setError: useCallback((error) => dispatch({ type: 'SET_ERROR', payload: error }), []),
     clearAll: useCallback(() => dispatch({ type: 'CLEAR_ALL' }), []),
