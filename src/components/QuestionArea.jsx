@@ -5,13 +5,16 @@ import CanvasDraw from './CanvasDraw'
 import { evaluateAnswer, evaluateCanvas } from '../services/ai'
 
 // Determine answer status from AI feedback text
+// MiMo is asked to prepend [正确], [引导], or [再想]
 function getAnswerStatus(feedback) {
   if (!feedback) return 'unknown'
-  const correct = /正确|没错|很好|理解到位|回答得好|准确|说得对|确实如此/.test(feedback)
-  const wrong = /再想想|换个角度|不完全对|不正确|有误|注意一下|重新思考/.test(feedback)
-  if (correct && !wrong) return 'correct'
-  if (wrong) return 'partial'
-  return 'partial' // default: partially correct / guiding
+  if (/^\s*\[正确\]/.test(feedback)) return 'correct'
+  if (/^\s*\[引导\]/.test(feedback)) return 'partial'
+  if (/^\s*\[再想\]/.test(feedback)) return 'wrong'
+  // Fallback: check for keywords anywhere
+  if (/^\[正确\]|回答正确|理解到位/.test(feedback)) return 'correct'
+  if (/再想想|换个角度/.test(feedback)) return 'partial'
+  return 'unknown'
 }
 
 const STATUS_CONFIG = {
@@ -35,6 +38,16 @@ export default function QuestionArea({ section }) {
       textareaRef.current.focus()
     }
   }, [activeInputId, inputMode])
+
+  // Auto-close input area when answer is saved
+  useEffect(() => {
+    if (activeInputId) {
+      const uniqueKey = `${section.id}__${activeInputId}`
+      if (state.studentAnswers[uniqueKey]) {
+        setActiveInputId(null)
+      }
+    }
+  }, [state.studentAnswers, activeInputId, section.id])
 
   if (!section?.questions || section.questions.length === 0) return null
 
@@ -90,12 +103,7 @@ export default function QuestionArea({ section }) {
     }
     setSubmitting(false)
     setTextInput('')
-    // Don't close input if answer was wrong - allow retry
-    const qData = state.studentAnswers[uniqueKey]
-    const lastStatus = qData?.status
-    if (lastStatus === 'correct') {
-      setActiveInputId(null)
-    }
+    setActiveInputId(null) // Always close input after submit
   }
 
   const handleRetry = (questionId) => {
@@ -161,8 +169,8 @@ export default function QuestionArea({ section }) {
               )}
             </div>
 
-            {/* Answer status bar */}
-            {answerData && !isActive && (
+            {/* Answer status bar - always show when answered */}
+            {answerData && (
               <div className={`ml-9 mb-4 p-3 rounded-lg ${
                 status === 'correct' ? 'bg-green-50' :
                 status === 'partial' ? 'bg-amber-50' :
@@ -183,7 +191,7 @@ export default function QuestionArea({ section }) {
                       {sConfig.label}（第 {answerData.attempts} 次尝试）
                     </span>
                   </div>
-                  {status !== 'correct' && (
+                  {status !== 'correct' && !isActive && (
                     <button
                       onClick={() => handleRetry(question.id)}
                       className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
