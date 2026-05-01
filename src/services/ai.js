@@ -8,10 +8,10 @@
 const PROVIDERS = {
   mimo: {
     name: 'MiMo (小米)',
-    defaultEndpoint: 'https://api.xiaoai.mi.com/v1/chat/completions',
-    defaultModel: 'mimo-v1',
-    apiKeyHeader: 'Authorization',
-    apiKeyPrefix: 'Bearer ',
+    defaultEndpoint: 'https://api.xiaomimimo.com/v1/chat/completions',
+    defaultModel: 'mimo-v2.5-pro',
+    apiKeyHeader: 'api-key',
+    apiKeyPrefix: '',
   },
   openai: {
     name: 'OpenAI',
@@ -46,8 +46,8 @@ export function getAIConfig() {
   } catch {}
   return {
     provider: 'mimo',
-    endpoint: '',
-    model: '',
+    endpoint: 'https://api.xiaomimimo.com/v1/chat/completions',
+    model: 'mimo-v2.5-pro',
     apiKey: '',
     systemPrompt: getSystemPrompt(),
   }
