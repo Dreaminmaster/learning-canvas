@@ -2,8 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { useStudy, useCurrentSection } from '../stores/StudyContext'
 import { getSocraticResponse } from '../services/ai'
 import QuestionArea from './QuestionArea'
-import AIChatPanel from './AIChatPanel'
-import { ChevronLeft, ChevronRight, MessageSquare, PenLine, Send, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PenLine, Send, Loader2 } from 'lucide-react'
 
 export default function ContentEditor() {
   const { state, actions } = useStudy()
@@ -12,14 +11,8 @@ export default function ContentEditor() {
   const [inlineInput, setInlineInput] = useState('')
   const [showInlineInput, setShowInlineInput] = useState(false)
   const [sending, setSending] = useState(false)
-  const [focusedQuestionId, setFocusedQuestionId] = useState(null)
   const textareaRef = useRef(null)
   const contentRef = useRef(null)
-
-  // Reset focused question when section changes
-  useEffect(() => {
-    setFocusedQuestionId(null)
-  }, [currentSectionIndex])
 
   // Auto-focus the textarea when it appears
   useEffect(() => {
@@ -170,7 +163,7 @@ export default function ContentEditor() {
             </div>
 
             {/* Questions section */}
-            <QuestionArea section={section} onQuestionFocus={setFocusedQuestionId} />
+            <QuestionArea section={section} />
 
             {/* Bottom padding */}
             <div className="h-20" />
@@ -191,11 +184,6 @@ export default function ContentEditor() {
         )}
       </div>
 
-      {/* AI Chat panel (right side) - per-question chat */}
-      <div className="w-px bg-gray-100 flex-shrink-0" />
-      <div className="w-[320px] flex-shrink-0 h-full px-5 py-6 border-l border-gray-50 flex flex-col overflow-hidden">
-        <AIChatPanel sectionId={section.id} focusedQuestionId={focusedQuestionId} />
-      </div>
     </div>
   )
 }
