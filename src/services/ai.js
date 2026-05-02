@@ -1,7 +1,5 @@
 /**
- * AI Service Layer
- * Supports multiple providers with a unified interface.
- * Currently: MiMo (小米), with extensibility for OpenAI, Gemini, etc.
+ * AI Service Layer — Three-stage outline generation pipeline
  */
 
 // Provider configurations
@@ -36,7 +34,6 @@ const PROVIDERS = {
   },
 }
 
-// Persistent config
 const CONFIG_KEY = 'learning-canvas-ai-config'
 
 export function getAIConfig() {
@@ -58,105 +55,51 @@ export function saveAIConfig(config) {
 }
 
 export function listProviders() {
-  return Object.entries(PROVIDERS).map(([key, val]) => ({
-    id: key,
-    name: val.name,
-  }))
+  return Object.entries(PROVIDERS).map(([key, val]) => ({ id: key, name: val.name }))
 }
 
-// System prompts
+// ─── System prompt ───
 function getSystemPrompt() {
   return `你是一位苏格拉底式学习助教。你的任务是帮助学生深入理解学习内容，而不是直接给出答案。
 
 核心原则：
 1. 不要直接告诉学生答案，而是通过引导性问题帮助他们自己思考
-2. 当学生回答正确时，给予肯定并深入追问"为什么"
+2. 当学生回答正确时，给予肯定并简短回应，不要追问新问题
 3. 当学生回答错误时，不要直接纠正，而是提供线索，引导他们发现问题
-4. 使用类比、举例等方式帮助理解抽象概念
-5. 鼓励学生表达自己的理解，即使不完整
-6. 保持温暖、耐心的语气
-
-回复格式：
-- 简洁明了，每次回复不超过 200 字
-- 用中文回复
-- 不要使用 markdown 格式`
+4. 回复简洁，不超过150字，用中文，不要markdown格式`
 }
 
-// Outline generation prompt - optimized for MiMo
-function getOutlinePrompt(materialText) {
-  return `请根据以下学习资料生成JSON格式的学习大纲。
-
-只返回JSON，不要其他文字。JSON结构：
-{"title":"主题","sections":[{"id":"s1","title":"标题","content":"200-500字的详细内容，支持markdown格式","questions":[{"id":"q1","text":"检验理解的问题","type":"text","hint":"可选提示"}]}]}
-
-要求：
-- sections 3-6节，由浅入深
-- 每节content包含概念解释和代码示例（用\`\`\`包裹）
-- 每节1-3个questions，类型可以是text或canvas
-- 用中文
-
-学习资料：
-${materialText}`
-}
-
-// Chat completion call
+// ─── Low-level API call ───
 export async function chatCompletion(messages, config = null) {
   const cfg = config || getAIConfig()
   const provider = PROVIDERS[cfg.provider] || PROVIDERS.custom
-
   const endpoint = cfg.endpoint || provider.defaultEndpoint
   const model = cfg.model || provider.defaultModel
   const apiKey = cfg.apiKey
 
-  if (!apiKey) {
-    throw new Error('请先配置 API Key')
-  }
-
-  // Build request based on provider
-  let response
+  if (!apiKey) throw new Error('请先配置 API Key')
 
   if (cfg.provider === 'gemini') {
-    // Gemini uses a different API format
     const url = `${endpoint}/${model}:generateContent?key=${apiKey}`
-    const geminiMessages = messages
-      .filter(m => m.role !== 'system')
-      .map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      }))
-
-    // Prepend system prompt as first user message if exists
+    const geminiMessages = messages.filter(m => m.role !== 'system')
+      .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
     const systemMsg = messages.find(m => m.role === 'system')
     if (systemMsg) {
-      geminiMessages.unshift({
-        role: 'user',
-        parts: [{ text: `[系统指令] ${systemMsg.content}` }],
-      })
-      geminiMessages.splice(1, 0, {
-        role: 'model',
-        parts: [{ text: '我理解了系统指令，现在开始扮演苏格拉底式学习助教的角色。' }],
-      })
+      geminiMessages.unshift({ role: 'user', parts: [{ text: `[系统指令] ${systemMsg.content}` }] })
+      geminiMessages.splice(1, 0, { role: 'model', parts: [{ text: '明白。' }] })
     }
-
-    response = await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: geminiMessages,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-      }),
+      body: JSON.stringify({ contents: geminiMessages, generationConfig: { temperature: 0.7, maxOutputTokens: 4096 } }),
     })
-
     const data = await response.json()
     if (data.error) throw new Error(data.error.message)
     return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
   }
 
-  // MiMo uses max_completion_tokens, OpenAI uses max_tokens
   const isMiMo = cfg.provider === 'mimo'
-
-  // OpenAI-compatible format (MiMo, OpenAI, Custom)
-  response = await fetch(endpoint, {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -166,140 +109,206 @@ export async function chatCompletion(messages, config = null) {
       model,
       messages,
       temperature: 0.7,
-      ...(isMiMo
-        ? { max_completion_tokens: 4096 }
-        : { max_tokens: 4096 }
-      ),
+      ...(isMiMo ? { max_completion_tokens: 4096 } : { max_tokens: 4096 }),
       stream: false,
     }),
   })
 
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`API Error (${response.status}): ${err}`)
-  }
-
+  if (!response.ok) throw new Error(`API Error (${response.status}): ${await response.text()}`)
   const data = await response.json()
   return data.choices?.[0]?.message?.content || ''
 }
 
-// Generate outline from learning material
-export async function generateOutline(materialText, config = null) {
-  const cfg = config || getAIConfig()
-  const systemPrompt = cfg.systemPrompt || getSystemPrompt()
-
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: getOutlinePrompt(materialText) },
-  ]
-
-  const raw = await chatCompletion(messages, cfg)
-
-  // Try to parse JSON from the response
-  try {
-    // Remove markdown code blocks if present
-    const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    return JSON.parse(jsonStr)
-  } catch {
-    throw new Error('AI 返回的格式无法解析，请重试或调整学习资料内容。')
-  }
+// Parse JSON from AI response (strips markdown code blocks)
+function parseJSON(raw) {
+  const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+  return JSON.parse(jsonStr)
 }
 
-// Socratic response to student's question/answer
+// ─── Three-stage outline generation pipeline ───
+
+/**
+ * Stage 1: Extract chapter skeleton from learning materials
+ * Returns: { title, sections: [{ id, title, keyConcepts: string[] }] }
+ */
+async function extractSkeleton(materialText) {
+  const prompt = `分析以下学习资料，提取学习主题和章节骨架。
+
+要求：
+- 生成 3-6 个章节，由浅入深，每章有明确的知识递进关系
+- 每章列出 2-4 个核心概念/知识点
+- 章节之间必须有逻辑关联，后一章依赖前一章的知识
+- 如果资料内容较少，减少章节数量，不要硬拆
+
+只返回JSON，格式：
+{"title":"学习主题","sections":[{"id":"s1","title":"章节标题","keyConcepts":["概念1","概念2"]}]}
+
+学习资料：
+${materialText}`
+
+  const raw = await chatCompletion([
+    { role: 'system', content: '你是学习内容分析师。只返回JSON，不要其他文字。' },
+    { role: 'user', content: prompt },
+  ])
+
+  return parseJSON(raw)
+}
+
+/**
+ * Stage 2: Generate detailed content for one chapter
+ * Takes skeleton + previous chapter context for coherence
+ * Returns: content string (200-500 words with markdown)
+ */
+async function generateChapterContent(skeleton, chapterIndex, previousChapterSummary) {
+  const chapter = skeleton.sections[chapterIndex]
+  const isFirst = chapterIndex === 0
+
+  const contextNote = isFirst
+    ? `这是第一章，从基础概念开始。`
+    : `上一章的要点是：${previousChapterSummary}。本章要在此基础上递进，自然衔接。`
+
+  const prompt = `为以下章节生成详细的学习内容。
+
+学习主题：${skeleton.title}
+章节标题：${chapter.title}
+核心概念：${chapter.keyConcepts.join('、')}
+背景：${contextNote}
+
+要求：
+- 内容 300-500 字，用中文
+- 由浅入深讲解每个核心概念，用类比帮助理解
+- 包含 1-2 个代码示例（用 \`\`\` 包裹）
+- 概念之间要有逻辑关联，不要跳跃
+- 确保内容深度适合初学者，不要引入本章未讲的概念`
+
+  return chatCompletion([
+    { role: 'system', content: '你是一位优秀的编程教师。用简洁清晰的中文讲解概念。' },
+    { role: 'user', content: prompt },
+  ])
+}
+
+/**
+ * Stage 3: Generate questions for one chapter
+ * STRICTLY based on the content — no superhuman questions
+ * Returns: questions array
+ */
+async function generateChapterQuestions(chapterTitle, chapterContent, chapterConcepts) {
+  const prompt = `根据以下章节内容，生成检验理解的问题。
+
+章节标题：${chapter.title}
+章节内容：
+${chapterContent}
+核心概念：${chapterConcepts.join('、')}
+
+严格要求：
+- 问题只能考查内容中明确讲过的概念，不能超纲
+- 问题难度与内容深度匹配，不能比内容深
+- 每章 1-3 个问题
+- 大部分应该是 text 类型，只有需要画图/流程图时才用 canvas 类型
+
+只返回JSON，格式：
+[{"id":"q1","text":"问题描述","type":"text","hint":"提示"}]`
+
+  const raw = await chatCompletion([
+    { role: 'system', content: '你是出题老师。严格基于内容出题，不超纲。只返回JSON。' },
+    { role: 'user', content: prompt },
+  ])
+
+  return parseJSON(raw)
+}
+
+/**
+ * Main entry: Generate outline using the three-stage pipeline
+ * Calls onProgress(step, chapterIndex, totalChapters) for UI updates
+ */
+export async function generateOutline(materialText, onProgress = null) {
+  // Stage 1: Extract skeleton
+  onProgress?.('skeleton', 0, 0)
+  const skeleton = await extractSkeleton(materialText)
+  const total = skeleton.sections.length
+
+  // Stage 2+3: Generate content and questions for each chapter
+  const sections = []
+  let previousSummary = ''
+
+  for (let i = 0; i < total; i++) {
+    onProgress?.('content', i, total)
+    const content = await generateChapterContent(skeleton, i, previousSummary)
+
+    onProgress?.('questions', i, total)
+    const questions = await generateChapterQuestions(skeleton.sections[i].title, content, skeleton.sections[i].keyConcepts)
+
+    sections.push({
+      id: skeleton.sections[i].id,
+      title: skeleton.sections[i].title,
+      content,
+      questions,
+    })
+
+    // Build summary for next chapter's context
+    previousSummary = `${skeleton.sections[i].title}: ${skeleton.sections[i].keyConcepts.join('、')}`
+  }
+
+  return { title: skeleton.title, sections }
+}
+
+// ─── Socratic Q&A ───
+
 export async function getSocraticResponse(context, config = null) {
   const cfg = config || getAIConfig()
   const systemPrompt = cfg.systemPrompt || getSystemPrompt()
-
-  const messages = [
+  return chatCompletion([
     { role: 'system', content: systemPrompt },
     { role: 'user', content: context },
-  ]
-
-  return chatCompletion(messages, cfg)
+  ], cfg)
 }
 
-// Evaluate student's answer to a question
 export async function evaluateAnswer(questionText, studentAnswer, sectionContent, config = null) {
   const cfg = config || getAIConfig()
   const systemPrompt = cfg.systemPrompt || getSystemPrompt()
 
-  const prompt = `以下是当前学习章节的内容：
----
-${sectionContent}
----
+  const prompt = `章节内容：${sectionContent.substring(0, 500)}
 
-章节末尾的问题是："${questionText}"
+问题："${questionText}"
+学生回答："${studentAnswer}"
 
-学生的回答是："${studentAnswer}"
+判断回答是否正确，在回复最前面加状态标签：
+- [正确] 回答基本正确 → 简短肯定，不追问新问题
+- [引导] 部分正确 → 指出对的部分，对不足给线索
+- [再想] 完全错误 → 用类比引导重新思考
 
-请严格按照以下步骤回应：
+回复不超过120字，用中文。`
 
-第一步：判断学生的回答是否正确。仔细对照章节内容，逐个检查学生提到的要点。
-
-第二步：在回复的最前面加上状态标签：
-- 如果回答基本正确（核心概念都涉及了）→ 开头写 [正确]，然后简短肯定即可，不要追问新问题
-- 如果回答有明显错误或遗漏了关键点 → 开头写 [引导]，先指出哪些部分对了，然后针对不足给出线索
-- 如果回答完全错误 → 开头写 [再想]，说"再想想"或"换个角度"，用类比引导重新思考
-
-注意：不要因为礼貌而把错误的回答说成正确！准确判断是最重要的。
-状态标签后面紧跟回复内容，回复用中文，简洁明了，不超过150字。`
-
-  const messages = [
+  return chatCompletion([
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },
-  ]
-
-  return chatCompletion(messages, cfg)
+  ], cfg)
 }
 
-// Evaluate student's canvas drawing using MiMo vision API
 export async function evaluateCanvas(questionText, imageDataUrl, sectionContent) {
   const cfg = getAIConfig()
-
-  // MiMo image recognition requires mimo-v2.5 (not -pro)
   const imageModel = cfg.provider === 'mimo' ? 'mimo-v2.5' : cfg.model
   const endpoint = cfg.endpoint || 'https://api.xiaomimimo.com/v1/chat/completions'
 
-  const messages = [
-    {
-      role: 'system',
-      content: '你是一位苏格拉底式学习助教。学生画了一张图来回答问题。请分析图片内容，判断学生的理解是否正确，然后用引导性的方式回应。不超过200字，用中文，不要markdown。'
-    },
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `学习章节内容：\n${sectionContent}\n\n问题是："${questionText}"\n\n请分析学生画的这张图：`
-        },
-        {
-          type: 'image_url',
-          image_url: { url: imageDataUrl }
-        }
-      ]
-    }
-  ]
-
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'api-key': cfg.apiKey,
-    },
+    headers: { 'Content-Type': 'application/json', 'api-key': cfg.apiKey },
     body: JSON.stringify({
       model: imageModel,
-      messages,
+      messages: [
+        { role: 'system', content: '你是学习助教。分析学生画的图，判断理解是否正确。用中文回复，不超过120字。' },
+        { role: 'user', content: [
+          { type: 'text', text: `章节内容：${sectionContent.substring(0, 300)}\n问题："${questionText}"\n请分析学生画的这张图：` },
+          { type: 'image_url', image_url: { url: imageDataUrl } },
+        ]},
+      ],
       max_completion_tokens: 1024,
       temperature: 0.7,
       stream: false,
     }),
   })
 
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`API Error (${response.status}): ${err}`)
-  }
-
+  if (!response.ok) throw new Error(`API Error (${response.status}): ${await response.text()}`)
   const data = await response.json()
   return data.choices?.[0]?.message?.content || ''
 }
