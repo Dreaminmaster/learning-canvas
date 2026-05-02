@@ -1,6 +1,6 @@
 import React from 'react'
 import { useStudy } from '../stores/StudyContext'
-import { Settings, BookOpen, ChevronRight } from 'lucide-react'
+import { Settings, BookOpen, ChevronRight, RotateCcw } from 'lucide-react'
 
 export default function Sidebar({ onOpenSettings }) {
   const { state, actions } = useStudy()
@@ -105,7 +105,20 @@ export default function Sidebar({ onOpenSettings }) {
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-50">
+      <div className="p-4 border-t border-gray-50 space-y-2">
+        {outline && (
+          <button
+            onClick={() => {
+              if (confirm('确定要重新开始？所有学习记录将被清除。')) {
+                actions.clearAll()
+              }
+            }}
+            className="flex items-center gap-2 text-xs text-gray-400 hover:text-red-500 transition-colors w-full"
+          >
+            <RotateCcw size={13} />
+            重新开始
+          </button>
+        )}
         <button
           onClick={onOpenSettings}
           className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors w-full"

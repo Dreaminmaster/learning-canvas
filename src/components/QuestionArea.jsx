@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useStudy } from '../stores/StudyContext'
-import { MessageSquare, PencilLine, CheckCircle2, AlertCircle, RotateCcw, Bot, User } from 'lucide-react'
+import { MessageSquare, PencilLine, CheckCircle2, AlertCircle, RotateCcw, Bot, User, Loader2 } from 'lucide-react'
 import CanvasDraw from './CanvasDraw'
-import { evaluateAnswer, evaluateCanvas } from '../services/ai'
+import { evaluateAnswer, evaluateCanvas, generateSupplement } from '../services/ai'
 
 function getAnswerStatus(feedback) {
   if (!feedback) return 'unknown'
@@ -27,6 +27,7 @@ export default function QuestionArea({ section }) {
   const [inputMode, setInputMode] = useState('text')
   const [textInput, setTextInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [supplementing, setSupplementing] = useState({}) // { [qId]: true }
   const textareaRef = useRef(null)
 
   useEffect(() => {
@@ -64,6 +65,12 @@ export default function QuestionArea({ section }) {
       actions.setStudentAnswer(uniqueKey, answer, feedback, status)
       actions.addChatMessage(qChatKey, { role: 'student', content: mode === 'canvas' ? '[绘制了图示]' : answer })
       actions.addChatMessage(qChatKey, { role: 'assistant', content: feedback })
+
+      // Check if we should generate supplementary content
+      const updatedAnswer = { ...state.studentAnswers[uniqueKey], attempts: (state.studentAnswers[uniqueKey]?.attempts || 0) + 1, status }
+      if (updatedAnswer.attempts >= 3 && status !== 'correct' && !supplementing[questionId]) {
+        triggerSupplement(questionId, q.text)
+      }
     } catch (err) {
       actions.addChatMessage(`${section.id}__${questionId}__chat`, {
         role: 'error', content: `提交失败: ${err.message}`,
@@ -72,6 +79,19 @@ export default function QuestionArea({ section }) {
     setSubmitting(false)
     setTextInput('')
     setActiveInputId(null)
+  }
+
+  const triggerSupplement = async (questionId, questionText) => {
+    setSupplementing(prev => ({ ...prev, [questionId]: true }))
+    try {
+      const supplement = await generateSupplement(section.content, questionText)
+      // Insert supplement into the section content
+      const updatedContent = section.content + '\n\n---\n\n### 💡 补充讲解\n\n' + supplement
+      actions.updateSectionContent(section.id, updatedContent)
+    } catch (e) {
+      console.warn('Supplement generation failed:', e)
+    }
+    setSupplementing(prev => ({ ...prev, [questionId]: false }))
   }
 
   return (
@@ -92,12 +112,12 @@ export default function QuestionArea({ section }) {
         const sConfig = STATUS_CONFIG[status]
         const StatusIcon = sConfig.icon
         const hasConversation = qMessages.length > 0
+        const isSupplementing = supplementing[question.id]
 
         return (
           <div key={question.id} className="flex gap-6">
-            {/* LEFT: Question + Input (2/3) */}
+            {/* LEFT: Question + Input */}
             <div className="flex-1 min-w-0">
-              {/* Question */}
               <div className="flex items-start gap-3 mb-3">
                 <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5">
                   {idx + 1}
@@ -107,6 +127,14 @@ export default function QuestionArea({ section }) {
                   {question.hint && <p className="text-xs text-gray-400 mt-1 italic">💡 {question.hint}</p>}
                 </div>
               </div>
+
+              {/* Supplement indicator */}
+              {isSupplementing && (
+                <div className="ml-9 mb-3 p-3 bg-blue-50 rounded-lg flex items-center gap-2">
+                  <Loader2 size={14} className="text-blue-500 animate-spin" />
+                  <span className="text-xs text-blue-700">正在为你生成补充讲解...</span>
+                </div>
+              )}
 
               {/* Answer status */}
               {answerData && (
@@ -128,6 +156,7 @@ export default function QuestionArea({ section }) {
                         status === 'wrong' ? 'text-red-700' : 'text-gray-500'
                       }`}>
                         {sConfig.label}（第 {answerData.attempts} 次尝试）
+                        {answerData.attempts >= 3 && status !== 'correct' && ' · 已触发补充讲解'}
                       </span>
                     </div>
                     {status !== 'correct' && !isActive && (
@@ -170,7 +199,6 @@ export default function QuestionArea({ section }) {
                           <PencilLine size={12} /> 画图
                         </button>
                       </div>
-
                       {inputMode === 'text' && (
                         <div className="writing-area">
                           <textarea ref={textareaRef} value={textInput}
@@ -202,7 +230,6 @@ export default function QuestionArea({ section }) {
                           </div>
                         </div>
                       )}
-
                       {inputMode === 'canvas' && (
                         <CanvasDraw onSubmit={(url) => handleSubmit(question.id, url, 'canvas')} />
                       )}
@@ -212,7 +239,7 @@ export default function QuestionArea({ section }) {
               )}
             </div>
 
-            {/* RIGHT: Per-question chat window (1/3) */}
+            {/* RIGHT: Per-question chat window */}
             {hasConversation ? (
               <div className="w-[280px] flex-shrink-0">
                 <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">

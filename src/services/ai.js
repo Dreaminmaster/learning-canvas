@@ -135,13 +135,13 @@ async function extractSkeleton(materialText) {
   const prompt = `分析以下学习资料，提取学习主题和章节骨架。
 
 要求：
-- 生成 3-6 个章节，由浅入深，每章有明确的知识递进关系
-- 每章列出 2-4 个核心概念/知识点
-- 章节之间必须有逻辑关联，后一章依赖前一章的知识
-- 如果资料内容较少，减少章节数量，不要硬拆
+- 章节的数量由内容决定：简单的资料可能只需要2章，复杂的可以有10章以上
+- 每章的知识点数量也不固定：有些章节需要讲5个概念，有些只需要1个
+- 章节之间必须有逻辑递进关系，后一章依赖前一章的知识
+- 每章标注核心概念的复杂度（基础/中等/进阶），方便后续生成合适深度的内容
 
 只返回JSON，格式：
-{"title":"学习主题","sections":[{"id":"s1","title":"章节标题","keyConcepts":["概念1","概念2"]}]}
+{"title":"学习主题","sections":[{"id":"s1","title":"章节标题","keyConcepts":["概念1","概念2"],"complexity":"基础"}]}
 
 学习资料：
 ${materialText}`
@@ -195,7 +195,7 @@ async function generateChapterContent(skeleton, chapterIndex, previousChapterSum
 async function generateChapterQuestions(chapterTitle, chapterContent, chapterConcepts) {
   const prompt = `根据以下章节内容，生成检验理解的问题。
 
-章节标题：${chapter.title}
+章节标题：${chapterTitle}
 章节内容：
 ${chapterContent}
 核心概念：${chapterConcepts.join('、')}
@@ -252,6 +252,32 @@ export async function generateOutline(materialText, onProgress = null) {
   return { title: skeleton.title, sections }
 }
 
+// ─── Dynamic content adjustment ───
+
+/**
+ * Generate supplementary content when student struggles
+ * Called when 2+ questions in a section have wrong/partial answers
+ */
+export async function generateRemedialContent(section) {
+  const prompt = `学生在以下章节连续答错了多道题，说明当前内容对他们来说太难了。
+
+章节标题：${section.title}
+章节内容：
+${section.content.substring(0, 600)}
+
+请生成一段补充讲解，要求：
+- 用更简单、更基础的方式重新讲解本章的核心概念
+- 使用生活中的类比来帮助理解
+- 如果有代码示例，给出更简单的版本并逐行解释
+- 300字左右，用中文
+- 语气温暖鼓励，不要让学生觉得自己笨`
+
+  return chatCompletion([
+    { role: 'system', content: '你是一位耐心的编程教师，擅长用最简单的方式解释复杂概念。' },
+    { role: 'user', content: prompt },
+  ])
+}
+
 // ─── Socratic Q&A ───
 
 export async function getSocraticResponse(context, config = null) {
@@ -281,6 +307,29 @@ export async function evaluateAnswer(questionText, studentAnswer, sectionContent
 
   return chatCompletion([
     { role: 'system', content: systemPrompt },
+    { role: 'user', content: prompt },
+  ], cfg)
+}
+
+// Generate supplementary content when student struggles
+export async function generateSupplement(sectionContent, questionText) {
+  const cfg = getAIConfig()
+  const prompt = `学生在学习以下内容时反复答错题目，请生成一段补充讲解。
+
+原始章节内容：
+${sectionContent.substring(0, 400)}
+
+学生反复答错的问题：${questionText}
+
+要求：
+- 用更简单的方式重新解释相关概念
+- 使用生活中的类比帮助理解
+- 可以包含额外的代码示例
+- 150-250字，用中文
+- 不要重复原始内容，而是从不同角度解释`
+
+  return chatCompletion([
+    { role: 'system', content: '你是一位耐心的编程教师，擅长用简单的比喻解释复杂概念。' },
     { role: 'user', content: prompt },
   ], cfg)
 }
