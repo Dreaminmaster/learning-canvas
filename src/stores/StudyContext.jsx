@@ -50,6 +50,13 @@ function studyReducer(state, action) {
       }
     }
 
+    case 'CLEAR_ANSWER': {
+      const { questionId } = action.payload
+      const newAnswers = { ...state.studentAnswers }
+      delete newAnswers[questionId]
+      return { ...state, studentAnswers: newAnswers }
+    }
+
     case 'SET_LOADING':
       return { ...state, loading: action.payload }
 
@@ -74,6 +81,8 @@ export function StudyProvider({ children }) {
       dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { sectionId, message } }), []),
     setStudentAnswer: useCallback((questionId, answer, feedback, status) =>
       dispatch({ type: 'SET_STUDENT_ANSWER', payload: { questionId, answer, feedback, status } }), []),
+    clearAnswer: useCallback((questionId) =>
+      dispatch({ type: 'CLEAR_ANSWER', payload: { questionId } }), []),
     setLoading: useCallback((loading) => dispatch({ type: 'SET_LOADING', payload: loading }), []),
     setError: useCallback((error) => dispatch({ type: 'SET_ERROR', payload: error }), []),
     clearAll: useCallback(() => dispatch({ type: 'CLEAR_ALL' }), []),

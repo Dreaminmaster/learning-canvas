@@ -12,8 +12,14 @@ export default function ContentEditor() {
   const [inlineInput, setInlineInput] = useState('')
   const [showInlineInput, setShowInlineInput] = useState(false)
   const [sending, setSending] = useState(false)
+  const [focusedQuestionId, setFocusedQuestionId] = useState(null)
   const textareaRef = useRef(null)
   const contentRef = useRef(null)
+
+  // Reset focused question when section changes
+  useEffect(() => {
+    setFocusedQuestionId(null)
+  }, [currentSectionIndex])
 
   // Auto-focus the textarea when it appears
   useEffect(() => {
@@ -164,7 +170,7 @@ export default function ContentEditor() {
             </div>
 
             {/* Questions section */}
-            <QuestionArea section={section} />
+            <QuestionArea section={section} onQuestionFocus={setFocusedQuestionId} />
 
             {/* Bottom padding */}
             <div className="h-20" />
@@ -185,10 +191,10 @@ export default function ContentEditor() {
         )}
       </div>
 
-      {/* AI Chat panel (right side) - section-level notes */}
+      {/* AI Chat panel (right side) - per-question chat */}
       <div className="w-px bg-gray-100 flex-shrink-0" />
-      <div className="w-[300px] flex-shrink-0 h-full px-5 py-6 border-l border-gray-50 flex flex-col overflow-hidden">
-        <AIChatPanel sectionId={section.id} />
+      <div className="w-[320px] flex-shrink-0 h-full px-5 py-6 border-l border-gray-50 flex flex-col overflow-hidden">
+        <AIChatPanel sectionId={section.id} focusedQuestionId={focusedQuestionId} />
       </div>
     </div>
   )
